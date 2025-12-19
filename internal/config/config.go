@@ -26,6 +26,7 @@ type Limits struct {
 		Burst             int `yaml:"burst"`
 	} `yaml:"default"`
 }
+
 type APIKey struct {
 	ID       string            `yaml:"id"`
 	Secret   string            `yaml:"secret"`
@@ -37,11 +38,25 @@ type Auth struct {
 	Keys   []APIKey `yaml:"keys"`
 }
 
+type Routes struct {
+	ID    string `yaml:"id"`
+	Match struct {
+		PathPrefix string   `yaml:"path_prefix"`
+		Methods    []string `yaml:"methods"`
+	} `yaml:"match"`
+
+	Upstream struct {
+		URL       string `yaml:"url"`
+		TimeoutMS int    `yaml:"timeout_ms"`
+	} `yaml:"upstream"`
+}
+
 type Root struct {
 	Server        Server        `yaml:"server"`
 	Observability Observability `yaml:"observability"`
 	Auth          Auth          `yaml:"auth"`
 	Limits        Limits        `yaml:"limits"`
+	Routes        []Routes      `yaml:"routes"`
 }
 
 func (s Server) ReadTimeout() time.Duration {
@@ -80,6 +95,11 @@ func Load(path string) (*Root, error) {
 	var cfg Root
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return nil, err
+	}
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Upstream.TimeoutMS <= 0 {
+			cfg.Routes[i].Upstream.TimeoutMS = 3000
+		}
 	}
 	if cfg.Server.Addr == "" {
 		cfg.Server.Addr = ":8080"

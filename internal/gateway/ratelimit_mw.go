@@ -7,6 +7,7 @@ import (
 
 	"github.com/AlexKimmel/GateLite/internal/auth"
 	"github.com/AlexKimmel/GateLite/internal/ratelimit"
+	"github.com/AlexKimmel/GateLite/internal/routing"
 )
 
 func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[string]struct{}) Middleware {
@@ -25,7 +26,15 @@ func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[str
 			}
 
 			now := time.Now()
-			dec, err := lim.Allow(r.Context(), keyID, policy, now)
+			rt, _ := routing.RouteFrom(r)
+
+			// key = routeID:keyID so limits are per-route per-key
+			limKey := keyID
+			if rt != nil {
+				limKey = rt.ID + ":" + keyID
+			}
+
+			dec, err := lim.Allow(r.Context(), limKey, policy, now)
 			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, "rate_limiter_error", "internal rate limiter error")
 				return

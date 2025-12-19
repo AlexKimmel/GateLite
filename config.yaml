@@ -22,3 +22,12 @@ limits:
   default:
     requests_per_minute: 60
     burst: 30
+
+routes:
+  - id: "echo"
+    match:
+      path_prefix: "/v1/echo/"
+      methods: ["GET","POST"]
+    upstream:
+      url: "http://localhost:9001"
+      timeout_ms: 3000
