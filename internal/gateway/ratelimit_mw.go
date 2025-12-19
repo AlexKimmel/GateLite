@@ -10,7 +10,13 @@ import (
 	"github.com/AlexKimmel/GateLite/internal/routing"
 )
 
-func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[string]struct{}) Middleware {
+func RateLimit(
+	lim ratelimit.Limiter,
+	policy ratelimit.Policy,
+	skipPaths map[string]struct{},
+	onLimited func(routeID string),
+	onError func(routeID string),
+) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// allow ops endpoints without limits
@@ -19,37 +25,48 @@ func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[str
 				return
 			}
 
+			// auth key id
 			keyID, ok := auth.KeyIDFrom(r.Context())
 			if !ok || keyID == "" {
-				// if auth not present yet, treat as anonymous (limit hard)
 				keyID = "anon"
 			}
 
 			now := time.Now()
+
+			// route (from gateway context)
 			rt, _ := routing.RouteFrom(r)
 
-			// key = routeID:keyID so limits are per-route per-key
+			routeID := "unknown"
+			if rt != nil && rt.ID != "" {
+				routeID = rt.ID
+			}
+
+			// limiter key = routeID:keyID (per-route per-key)
 			limKey := keyID
-			p := policy // fallback to global default
-
-			if rt != nil {
+			if rt != nil && rt.ID != "" {
 				limKey = rt.ID + ":" + keyID
+			}
 
-				if rt.LimitDefaultRPM > 0 && rt.LimitDefaultBurst > 0 {
-					// route default policy (stored on the route)
-					p = ratelimit.Policy{RPM: rt.LimitDefaultRPM, Burst: rt.LimitDefaultBurst}
-				}
+			// choose policy: start with global fallback
+			p := policy
 
-				// optional per-key override on this route
-				if rt.LimitOverrides != nil {
-					if o, ok := rt.LimitOverrides[keyID]; ok {
-						p = ratelimit.Policy{RPM: o.RPM, Burst: o.Burst}
-					}
+			// override from route default if present (>0)
+			if rt != nil && rt.LimitDefaultRPM > 0 && rt.LimitDefaultBurst > 0 {
+				p = ratelimit.Policy{RPM: rt.LimitDefaultRPM, Burst: rt.LimitDefaultBurst}
+			}
+
+			// optional per-key override on this route
+			if rt != nil && rt.LimitOverrides != nil {
+				if o, ok := rt.LimitOverrides[keyID]; ok && o.RPM > 0 && o.Burst > 0 {
+					p = ratelimit.Policy{RPM: o.RPM, Burst: o.Burst}
 				}
 			}
 
 			dec, err := lim.Allow(r.Context(), limKey, p, now)
 			if err != nil {
+				if onError != nil {
+					onError(routeID)
+				}
 				writeJSON(w, http.StatusInternalServerError, "rate_limiter_error", "internal rate limiter error")
 				return
 			}
@@ -62,6 +79,9 @@ func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[str
 			}
 
 			if !dec.Allowed {
+				if onLimited != nil {
+					onLimited(routeID)
+				}
 				writeJSON(w, http.StatusTooManyRequests, "rate_limited", "Too many requests")
 				return
 			}

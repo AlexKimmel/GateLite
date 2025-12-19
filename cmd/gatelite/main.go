@@ -21,6 +21,8 @@ import (
 	"github.com/AlexKimmel/GateLite/internal/ratelimit"
 	"github.com/AlexKimmel/GateLite/internal/ratelimit/memory"
 	"github.com/AlexKimmel/GateLite/internal/routing"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -34,6 +36,9 @@ func main() {
 	// Logger
 	logger := obs.SetupLogger(cfg.Observability.LogLevel)
 	logger.Info().Msg("Setup logger")
+
+	reg := prometheus.NewRegistry()
+	metrics := obs.NewMetrics(reg)
 
 	// Public endpoints
 	mux := http.NewServeMux()
@@ -101,6 +106,12 @@ func main() {
 			))
 		}
 	})
+
+	metricsPath := cfg.Observability.PrometheusPath
+	if metricsPath == "" {
+		metricsPath = "/metrics"
+	}
+	mux.Handle(metricsPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	// Build auth store (select -> KeyId)
 	pairs := map[string]string{}
@@ -177,6 +188,7 @@ func main() {
 		"/version":      {},
 		"/debug/match":  {},
 		"/debug/router": {},
+		metricsPath:     {},
 	}
 
 	// Reverse proxy final handler + middleware stack
@@ -185,11 +197,18 @@ func main() {
 
 	gatewayStack := gateway.Chain(
 		finalProxy,
-		obs.Logger(logger), // outermost
+		obs.Logger(logger),
 		gateway.BodyLimit(int(cfg.Server.MaxBody())),
 		gateway.RouteMatcher(rr, skip),
+		metrics.Middleware(skip),
 		authStore.Middleware(skip),
-		gateway.RateLimit(memLimiter, policy, skip),
+		gateway.RateLimit(
+			memLimiter,
+			policy,
+			skip,
+			func(routeID string) { metrics.RateLimited.WithLabelValues(routeID).Inc() },
+			func(routeID string) { metrics.LimiterErrors.WithLabelValues(routeID).Inc() },
+		),
 	)
 
 	mux.Handle("/", gatewayStack)

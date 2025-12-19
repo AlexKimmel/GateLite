@@ -1,12 +1,14 @@
 {
     "cSpell.words": [
         "alexanderkimmel",
+        "gatelite",
         "gofumpt",
         "hlog",
         "ineffassign",
         "Kimmel",
         "oburst",
         "orpm",
+        "promhttp",
         "zerolog"
     ]
 }
