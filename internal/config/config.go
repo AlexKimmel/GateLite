@@ -27,6 +27,16 @@ type Limits struct {
 	} `yaml:"default"`
 }
 
+type RateLimits struct {
+	Default RateLimitPolicy `yaml:"default"`
+	Overrides map[string]RateLimitPolicy `yaml:"overrides"`
+}
+
+type RateLimitPolicy struct {
+	RequestsPerMinute int `yaml:"requests_per_minute"`
+	Burst             int `yaml:"burst"`
+}
+
 type APIKey struct {
 	ID       string            `yaml:"id"`
 	Secret   string            `yaml:"secret"`
@@ -49,6 +59,8 @@ type Routes struct {
 		URL       string `yaml:"url"`
 		TimeoutMS int    `yaml:"timeout_ms"`
 	} `yaml:"upstream"`
+
+	RateLimitPolicy RateLimits `yaml:"rate_limit_policy"`
 }
 
 type Root struct {

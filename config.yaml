@@ -31,3 +31,11 @@ routes:
     upstream:
       url: "http://localhost:9001"
       timeout_ms: 3000
+    rate_limits:
+      default:
+        requests_per_minute: 10
+        burst: 5
+      overrides:
+        demo:
+          requests_per_minute: 120
+          burst: 60

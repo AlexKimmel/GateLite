@@ -15,6 +15,10 @@ type Route struct {
 	Prefix  string
 	UpUrl   *url.URL
 	Timeout time.Duration
+
+	LimitDefaultRPM int
+	LimitDefaultBurst int
+	LimitOverrides map[string]struct{RPM, Burst int}
 }
 
 type Router struct {

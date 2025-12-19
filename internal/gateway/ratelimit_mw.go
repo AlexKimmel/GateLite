@@ -30,11 +30,25 @@ func RateLimit(lim ratelimit.Limiter, policy ratelimit.Policy, skipPaths map[str
 
 			// key = routeID:keyID so limits are per-route per-key
 			limKey := keyID
+			p := policy // fallback to global default
+
 			if rt != nil {
 				limKey = rt.ID + ":" + keyID
+
+				if rt.LimitDefaultRPM > 0 && rt.LimitDefaultBurst > 0 {
+					// route default policy (stored on the route)
+					p = ratelimit.Policy{RPM: rt.LimitDefaultRPM, Burst: rt.LimitDefaultBurst}
+				}
+
+				// optional per-key override on this route
+				if rt.LimitOverrides != nil {
+					if o, ok := rt.LimitOverrides[keyID]; ok {
+						p = ratelimit.Policy{RPM: o.RPM, Burst: o.Burst}
+					}
+				}
 			}
 
-			dec, err := lim.Allow(r.Context(), limKey, policy, now)
+			dec, err := lim.Allow(r.Context(), limKey, p, now)
 			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, "rate_limiter_error", "internal rate limiter error")
 				return

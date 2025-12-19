@@ -88,6 +88,15 @@ func main() {
 					"\n  prefix=" + strconv.Quote(rt.Prefix) +
 					"\n  prefix_len=" + strconv.Itoa(len(rt.Prefix)) +
 					"\n  methods_keys=" + keys(rt.Methods) +
+					"\n  limit_default_rpm=" + strconv.Itoa(rt.LimitDefaultRPM) +
+					"\n  limit_default_burst=" + strconv.Itoa(rt.LimitDefaultBurst) +
+					"\n  limit_overrides_keys=" + keys(func() map[string]struct{} {
+					m := make(map[string]struct{})
+					for k := range rt.LimitOverrides {
+						m[k] = struct{}{}
+					}
+					return m
+				}()) +
 					"\n",
 			))
 		}
@@ -105,6 +114,29 @@ func main() {
 	// Build router from cfg.Routers
 	// rr := routing.New() moved upwards for debugging
 	for _, rc := range cfg.Routes {
+
+		rpm := rc.RateLimitPolicy.Default.RequestsPerMinute
+		burst := rc.RateLimitPolicy.Default.Burst
+		if rpm <= 0 {
+			rpm = cfg.Limits.Default.RequestsPerMinute
+		}
+		if burst <= 0 {
+			burst = cfg.Limits.Default.Burst
+		}
+
+		ov := map[string]struct{ RPM, Burst int }{}
+		for keyID, p := range rc.RateLimitPolicy.Overrides {
+			orpm := p.RequestsPerMinute
+			oburst := p.Burst
+			if orpm <= 0 {
+				orpm = rpm
+			}
+			if oburst <= 0 {
+				oburst = burst
+			}
+			ov[keyID] = struct{ RPM, Burst int }{RPM: orpm, Burst: oburst}
+		}
+
 		u, err := url.Parse(rc.Upstream.URL)
 		if err != nil {
 			log.Fatalf("invalid upstream URL for route %s: %v", rc.ID, err)
@@ -126,6 +158,10 @@ func main() {
 			Prefix:  prefix,
 			UpUrl:   u,
 			Timeout: timeout,
+
+			LimitDefaultRPM:   rpm,
+			LimitDefaultBurst: burst,
+			LimitOverrides:    ov,
 		})
 	}
 
@@ -137,10 +173,10 @@ func main() {
 	}
 	// Skip list for auth/ratelimit/router-matching
 	skip := map[string]struct{}{
-		"/health":  {},
-		"/version": {},
-		"/debug/match":   {},
-		"/debug/router":  {},
+		"/health":       {},
+		"/version":      {},
+		"/debug/match":  {},
+		"/debug/router": {},
 	}
 
 	// Reverse proxy final handler + middleware stack

@@ -5,6 +5,8 @@
         "hlog",
         "ineffassign",
         "Kimmel",
+        "oburst",
+        "orpm",
         "zerolog"
     ]
 }
